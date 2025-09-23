@@ -212,10 +212,18 @@ class ExportOptions(QtWidgets.QWidget):
         self.eps_hint = QtWidgets.QLabel("Required for 'nearest' strategy.")
         self.eps_hint.setStyleSheet("color: gray; font-style: italic;")
 
+        # Sample limit for synchronized export
+        self.sample_limit_edit = QtWidgets.QLineEdit()
+        self.sample_limit_edit.setPlaceholderText("e.g., 100 (leave empty for all samples)")
+        self.sample_limit_hint = QtWidgets.QLabel("Maximum number of synchronized samples to export (only applies when resampling is enabled).")
+        self.sample_limit_hint.setStyleSheet("color: gray; font-style: italic;")
+
         global_layout.addRow("CPU usage", cpu_layout)
         global_layout.addRow("Association Strategy", self.assoc_combo)
         global_layout.addRow("Discard Eps (s)", self.eps_edit)
         global_layout.addRow("", self.eps_hint)
+        global_layout.addRow("Sample Limit", self.sample_limit_edit)
+        global_layout.addRow("", self.sample_limit_hint)
         global_group.setLayout(global_layout)
         layout.addWidget(global_group)
 
@@ -325,6 +333,8 @@ class ExportOptions(QtWidgets.QWidget):
         enable = mode != "no resampling"
         self.eps_edit.setEnabled(enable)
         self.eps_hint.setVisible(mode == "nearest")
+        self.sample_limit_edit.setEnabled(enable)
+        self.sample_limit_hint.setVisible(enable)
         for cb in self.master_checkboxes.values():
             cb.setEnabled(enable)
 
@@ -430,6 +440,17 @@ class ExportOptions(QtWidgets.QWidget):
                 raise ValueError(
                     "Discard Eps is required for 'nearest' association strategy.")
 
+            # validate sample limit
+            sample_limit = None
+            sample_limit_text = self.sample_limit_edit.text().strip()
+            if sample_limit_text:
+                try:
+                    sample_limit = int(sample_limit_text)
+                    if sample_limit <= 0:
+                        raise ValueError("Sample limit must be a positive integer.")
+                except ValueError as e:
+                    raise ValueError(f"Invalid sample limit: {e}")
+
             master_topic = None
             for topic, cb in self.master_checkboxes.items():
                 if cb.isChecked():
@@ -444,7 +465,8 @@ class ExportOptions(QtWidgets.QWidget):
             global_config["resample_config"] = {
                 "master_topic": master_topic,
                 "association": assoc_mode,
-                "discard_eps": eps
+                "discard_eps": eps,
+                "sample_limit": sample_limit
             }
 
         for topic, widgets in self.config_widgets.items():
@@ -548,16 +570,28 @@ class ExportOptions(QtWidgets.QWidget):
                             arg_edit.setText(str(arg_value))
 
         # Set global synchronization settings if present
-        for topic, topic_cfg in config.items():
-            rcfg = topic_cfg.get("resample_config")
-            if rcfg:
-                assoc = rcfg.get("association", "no resampling")
-                idx = self.assoc_combo.findText(assoc)
-                if idx >= 0:
-                    self.assoc_combo.setCurrentIndex(idx)
-                if "discard_eps" in rcfg:
-                    self.eps_edit.setText(str(rcfg["discard_eps"]))
-                break
+        if global_config is not None and "resample_config" in global_config:
+            rcfg = global_config["resample_config"]
+            assoc = rcfg.get("association", "no resampling")
+            idx = self.assoc_combo.findText(assoc)
+            if idx >= 0:
+                self.assoc_combo.setCurrentIndex(idx)
+            if "discard_eps" in rcfg:
+                self.eps_edit.setText(str(rcfg["discard_eps"]))
+            if "sample_limit" in rcfg and rcfg["sample_limit"] is not None:
+                self.sample_limit_edit.setText(str(rcfg["sample_limit"]))
+        else:
+            # Fallback to old per-topic config format
+            for topic, topic_cfg in config.items():
+                rcfg = topic_cfg.get("resample_config")
+                if rcfg:
+                    assoc = rcfg.get("association", "no resampling")
+                    idx = self.assoc_combo.findText(assoc)
+                    if idx >= 0:
+                        self.assoc_combo.setCurrentIndex(idx)
+                    if "discard_eps" in rcfg:
+                        self.eps_edit.setText(str(rcfg["discard_eps"]))
+                    break
 
     def select_directory_and_apply(self, edit):
         """

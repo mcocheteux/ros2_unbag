@@ -80,6 +80,10 @@ class Exporter:
               f"{self.num_parallel_workers} for parallel topics, "
               f"{len(self.sequential_topics)} for sequential topics.")
         self._enqueued_files = set()
+        
+        # Initialize sample limit tracking
+        self.samples_exported = 0
+        self.sample_limit = None
 
         # Pre-fetch export handlers and processors
         self.topic_handlers = {}
@@ -260,13 +264,16 @@ class Exporter:
         try:
             dropped_frames = defaultdict(int)  # topic -> count
 
-            # Get resampling config: master topic, association strategy, and discard threshold
-            master_topic, assoc_strategy, discard_eps = self._get_resampling_config()
+            # Get resampling config: master topic, association strategy, discard threshold, and sample limit
+            master_topic, assoc_strategy, discard_eps, sample_limit = self._get_resampling_config()
 
             if master_topic is None:
                 # No resampling configured – export all messages individually
                 self._export_all_messages()
                 return
+
+            # Set sample limit from config
+            self.sample_limit = sample_limit
 
             # Dispatch to the appropriate resampling strategy
             if assoc_strategy == 'last':
@@ -292,7 +299,7 @@ class Exporter:
             None
 
         Returns:
-            tuple: (master_topic: str or None, assoc_strategy: str or None, discard_eps: float or None)
+            tuple: (master_topic: str or None, assoc_strategy: str or None, discard_eps: float or None, sample_limit: int or None)
         """
         global_rcfg = self.global_config.get("resample_config")
         if global_rcfg:
@@ -303,11 +310,14 @@ class Exporter:
                 raise ValueError("Resample_config must define a 'master_topic'")
             assoc = global_rcfg.get("association", "last")
             discard_eps = global_rcfg.get("discard_eps")
+            sample_limit = global_rcfg.get("sample_limit")
             if assoc == "nearest" and discard_eps is None:
                 raise ValueError("'nearest' association requires 'discard_eps' in global config.")
             self.logger.info(f"Resampling with strategy '{assoc}' to master topic '{master}'")
-            return master, assoc, discard_eps
-        return None, None, None
+            if sample_limit is not None:
+                self.logger.info(f"Sample limit set to {sample_limit}")
+            return master, assoc, discard_eps, sample_limit
+        return None, None, None, None
 
 
     def _export_all_messages(self):
@@ -344,6 +354,9 @@ class Exporter:
         Returns:
             None
         """
+        # Reset sample counter for this synchronization run
+        self.samples_exported = 0
+        
         latest_messages = {}
         latest_ts_seen = 0
         discard_eps_ns = int(discard_eps * 1e9) if discard_eps is not None else None
@@ -353,12 +366,14 @@ class Exporter:
             if res is None:
                 break
 
-            topic, msg, _ = res
+            topic, msg, t = res
             cfg = self.config.get(topic)
             if not cfg:
                 continue
 
-            ts = get_time_from_msg(msg, return_datetime=False)
+            # Use timestamp from bag instead of extracting from message
+            # Convert bag timestamp (nanoseconds) to our format
+            ts = int(t)
 
             latest_ts_seen = max(latest_ts_seen, ts)
             latest_messages[topic] = (ts, msg)
@@ -384,8 +399,14 @@ class Exporter:
                 frame[t] = sel_msg
 
             if frame:
+                # Check sample limit before exporting
+                if self.sample_limit is not None and self.samples_exported >= self.sample_limit:
+                    self.logger.info(f"Sample limit of {self.sample_limit} reached. Stopping export.")
+                    break
+                
                 for t, m in frame.items():
                     self._enqueue_export_task(t, m)
+                self.samples_exported += 1
             else:
                 for t in self.config:
                     if t == master_topic:
@@ -410,6 +431,9 @@ class Exporter:
         Returns:
             None
         """
+        # Reset sample counter for this synchronization run
+        self.samples_exported = 0
+        
         buffers = defaultdict(deque)
         latest_ts_seen = 0
         discard_eps_ns = int(discard_eps * 1e9)
@@ -419,12 +443,14 @@ class Exporter:
             if res is None:
                 break
 
-            topic, msg, _ = res
+            topic, msg, t = res
             cfg = self.config.get(topic)
             if not cfg:
                 continue
 
-            ts = get_time_from_msg(msg, return_datetime=False)
+            # Use timestamp from bag instead of extracting from message
+            # Convert bag timestamp (nanoseconds) to our format
+            ts = int(t)
             
             latest_ts_seen = max(latest_ts_seen, ts)
             buffers[topic].append((ts, msg))
@@ -459,8 +485,14 @@ class Exporter:
                     frame[t] = selected_msg
 
                 if valid:
+                    # Check sample limit before exporting
+                    if self.sample_limit is not None and self.samples_exported >= self.sample_limit:
+                        self.logger.info(f"Sample limit of {self.sample_limit} reached. Stopping export.")
+                        break
+                    
                     for t, m in frame.items():
                         self._enqueue_export_task(t, m)
+                    self.samples_exported += 1
                 else:
                     for t in self.config:
                         if t == master_topic:

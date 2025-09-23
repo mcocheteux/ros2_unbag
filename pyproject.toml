@@ -1,10 +1,6 @@
 [build-system]
-requires = ["setuptools>=61", "wheel", "setuptools_scm>=6.2"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
-
-[tool.setuptools_scm]
-version_scheme = "post-release"
-local_scheme = "no-local-version"
 
 [project]
 name = "ros2_unbag"
@@ -16,7 +12,7 @@ authors = [{ name = "Lukas Ostendorf", email = "lukas.ostendorf@ika.rwth-aachen.
 maintainers = [{ name = "Lukas Ostendorf", email = "lukas.ostendorf@ika.rwth-aachen.de" }]
 urls = { homepage = "https://github.com/ika-rwth-aachen/ros2_unbag" }
 keywords = ["ros2", "rosbag", "robotics", "perception", "ros2-export"]
-dynamic = ["version"]
+version = "0.1.0"
 
 dependencies = [
     "numpy==1.26.4",
