@@ -1,32 +1,41 @@
 {
-  "/imu/pos": {
-    "format": "text/json@single_file",
-    "path": "/docker-ros/data/rosbag2_2025_08_19-12_34_56",
-    "subfolder": "%name",
-    "naming": "%name"
-  },
-  "/drivers/lidar_fl/nearir_image": {
-    "format": "image/png",
-    "path": "/docker-ros/data/rosbag2_2025_08_19-12_34_56",
+  "/sensors/cameras/front/camera_info": {
+    "format": "text/yaml@multi_file",
+    "path": "./data/output",
     "subfolder": "%name",
     "naming": "%name_%index"
   },
-  "/drivers/lidar_fl/pointcloud": {
-    "format": "pointcloud/pcd",
-    "path": "/docker-ros/data/rosbag2_2025_08_19-12_34_56",
+  "/sensors/cameras/front/image/compressed": {
+    "format": "image/png",
+    "path": "./data/output",
     "subfolder": "%name",
-    "naming": "%name_%index",
-    "processor": "transform_from_yaml",
-    "processor_args": {
-      "custom_frame_path": "test.yml"
-    }
+    "naming": "%name_%index"
+  },
+  "/sensors/lidars/front_wide/points": {
+    "format": "pointcloud/pcd",
+    "path": "./data/output",
+    "subfolder": "%name",
+    "naming": "%name_%index"
+  },
+  "/tf": {
+    "format": "text/yaml@multi_file",
+    "path": "./data/output",
+    "subfolder": "%name",
+    "naming": "%name_%index"
+  },
+  "/tf_static": {
+    "format": "text/yaml@multi_file",
+    "path": "./data/output",
+    "subfolder": "%name",
+    "naming": "%name_%index"
   },
   "__global__": {
-    "cpu_percentage": 85.0,
+    "cpu_percentage": 80.0,
     "resample_config": {
-      "master_topic": "/drivers/lidar_fl/pointcloud",
+      "master_topic": "/sensors/cameras/front/camera_info",
       "association": "nearest",
-      "discard_eps": 0.5
-      }
+      "discard_eps": 0.1,
+      "sample_limit": 5
+    }
   }
 }
